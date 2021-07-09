@@ -38,16 +38,20 @@ linters:
     - importas
     - misspell
     - nakedret
+    - noctx
     - nolintlint
     - prealloc
+    - predeclared
     - revive
     - rowserrcheck
     - sqlclosecheck
     - stylecheck
+    - testpackage
     - unconvert
     - unparam
     - wastedassign
     - whitespace
+    - wrapcheck
 
 issues:
   max-issues-per-linter: 1023
