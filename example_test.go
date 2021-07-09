@@ -127,10 +127,10 @@ func ExampleQueue_canceled() {
 	var wg sync.WaitGroup
 	for jobNo, tout := range jobTimeouts {
 		wg.Add(1)
-		go func() {
+		go func(jobNo int, tout time.Duration) {
 			defer wg.Done()
 			queueTask(jobNo, tout)
-		}()
+		}(jobNo, tout)
 		time.Sleep(time.Second / 20) // Avoid getting out of order.
 	}
 	wg.Wait()
