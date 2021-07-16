@@ -353,3 +353,63 @@ func TestQueue_multiGates(t *testing.T) {
 		t.Errorf("unexpected done counter: got %d, want %d", numDone, numEntries)
 	}
 }
+
+func TestQueue_Pause(t *testing.T) {
+	const numEntries = 2000
+
+	conf := &waitqueue.Config{
+		Interval: time.Second * 4 / numEntries,
+		Paused:   true,
+	}
+	q, err := waitqueue.NewWithConfig(conf)
+	if err != nil {
+		t.Fatalf("waitqueue.NewWithConfig(): %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	defer cancel()
+
+	var numDone uint32
+
+	var wg sync.WaitGroup
+	for i := 0; i < numEntries; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			if err := q.Wait(ctx); err != nil {
+				t.Errorf("n=%d: Wait() failed: %v", n, err)
+			}
+			atomic.AddUint32(&numDone, 1)
+		}(i)
+	}
+
+	time.Sleep(time.Second)
+	if n := atomic.LoadUint32(&numDone); n != 0 {
+		t.Errorf("%d go-routines have passed even though it is paused.", n)
+	}
+	if !q.IsPaused() {
+		t.Errorf("unexpected IsPaused result: got: false, want: true")
+	}
+	q.Resume()
+	if q.IsPaused() {
+		t.Errorf("unexpected IsPaused result: got: true, want: false")
+	}
+	time.Sleep(time.Second)
+	q.Pause()
+	n2 := atomic.LoadUint32(&numDone)
+	t.Logf("1s after resumed: %d", n2)
+	if n2 == 0 {
+		t.Errorf("resumed but none of go-routines passed.")
+	}
+	time.Sleep(time.Second)
+	if n := atomic.LoadUint32(&numDone); n != n2 {
+		t.Errorf("%d go-routines have passed even though it is paused (2).", n-n2)
+	}
+	q.Resume()
+	wg.Wait()
+
+	t.Logf("done: %5d", numDone)
+	if numDone != numEntries {
+		t.Errorf("unexpected counter: got %d, want %d", numDone, numEntries)
+	}
+}

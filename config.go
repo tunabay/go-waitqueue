@@ -23,4 +23,9 @@ type Config struct {
 	// Minimum interval that an exit gate should wait before accepting the
 	// next entry after the previous entry passes through the gate.
 	IntervalPerGate time.Duration
+
+	// Paused specifies whether to create Queue in a paused state at the
+	// start. Same as calling Pause() immediately after creation. Call
+	// Resume() to resume.
+	Paused bool
 }

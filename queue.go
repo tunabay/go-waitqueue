@@ -18,6 +18,7 @@ type Queue struct {
 	gate            *gateSet
 	interval        time.Duration
 	intervalPerGate time.Duration
+	paused          bool
 	cond            *sync.Cond
 	mu              sync.Mutex
 }
@@ -57,6 +58,7 @@ func NewWithConfig(conf *Config) (*Queue, error) {
 		gate:            newGateSet(numGates),
 		interval:        conf.Interval,
 		intervalPerGate: conf.IntervalPerGate,
+		paused:          conf.Paused,
 	}
 	q.cond = sync.NewCond(&q.mu)
 
@@ -133,6 +135,34 @@ func (q *Queue) Length() int {
 	return q.line.n
 }
 
+// Pause pauses the queue. All waiting go-routines continue to wait
+// unconditionally until the queue is resumed. Call Resume to resume the queue.
+// Calling Wait or WaitWithTask while paused is allowed. Duplicate calling
+// Pause while already paused has no effect.
+func (q *Queue) Pause() {
+	q.mu.Lock()
+	q.paused = true
+	q.mu.Unlock()
+}
+
+// Resume resumes the paused queue. All waiting go-routines go through again
+// in order. Calling Resume when not in a paused state has no effect.
+func (q *Queue) Resume() {
+	q.mu.Lock()
+	if q.paused {
+		q.paused = false
+		q.cond.Broadcast()
+	}
+	q.mu.Unlock()
+}
+
+// IsPaused reports whether q is currently paused.
+func (q *Queue) IsPaused() bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.paused
+}
+
 func (q *Queue) serve(sid int) {
 	// fmt.Printf("serve(%d) started.\n", sid)
 	// defer fmt.Printf("serve(%d) finished.\n", sid)
@@ -145,6 +175,10 @@ func (q *Queue) serve(sid int) {
 				q.cond.L.Unlock()
 				close(timerC)
 				return
+			}
+			if q.paused {
+				q.cond.Wait()
+				continue
 			}
 			gOK, gUntil := q.gate.check()
 			if !gOK {
