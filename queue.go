@@ -19,6 +19,7 @@ type Queue struct {
 	interval        time.Duration
 	intervalPerGate time.Duration
 	paused          bool
+	cordonedOff     error
 	cond            *sync.Cond
 	mu              sync.Mutex
 }
@@ -59,6 +60,7 @@ func NewWithConfig(conf *Config) (*Queue, error) {
 		interval:        conf.Interval,
 		intervalPerGate: conf.IntervalPerGate,
 		paused:          conf.Paused,
+		cordonedOff:     conf.CordonedOff,
 	}
 	q.cond = sync.NewCond(&q.mu)
 
@@ -78,6 +80,12 @@ func (q *Queue) Wait(ctx context.Context) error {
 // occupying an exit gate. In other words, it occupies an exit gate until the
 // task completes or canceled, and the next entry waits for it.
 func (q *Queue) WaitWithTask(ctx context.Context, task TaskFunc) error {
+	q.mu.Lock()
+	if err := q.cordonedOff; err != nil {
+		q.mu.Unlock()
+		return err
+	}
+	q.mu.Unlock()
 	if ctx.Err() != nil {
 		return &CanceledError{err: ctx.Err(), inQueue: true}
 	}
@@ -161,6 +169,50 @@ func (q *Queue) IsPaused() bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	return q.paused
+}
+
+// Cordon temporarily blocks new entry into the queue. All new Wait and
+// WaitWithTask calls fail immediately and return ErrCordonedOff. Calls that
+// have already been started and are waiting for their turn in the queue are not
+// affected or canceled, and continue to wait. In other words, this blocks the
+// entrance to the queue. Call Uncordon to release this state. Duplicate Cordon
+// calls have basically no effect, but if an error is set by CordonWithError,
+// Cordon overwrites it with the default ErrCordonedOff.
+func (q *Queue) Cordon() {
+	q.CordonWithError(nil)
+}
+
+// CordonWithError is identical to Cordon except that it uses the provided err
+// instead of the default ErrCordonedOff. If err is nil, it uses the default.
+// Duplicate calls always updates the error.
+func (q *Queue) CordonWithError(err error) {
+	if err == nil {
+		err = ErrCordonedOff
+	}
+	q.mu.Lock()
+	q.cordonedOff = err
+	q.mu.Unlock()
+}
+
+// Uncordon releases the cordoned off state of the queue. After this call, Wait
+// and WaitWithTask calls return to normal operation.
+func (q *Queue) Uncordon() {
+	q.mu.Lock()
+	q.cordonedOff = nil
+	q.mu.Unlock()
+}
+
+// IsCordonedOff reports whether q is currently cordoned off.
+func (q *Queue) IsCordonedOff() bool {
+	return q.CordonedOffErr() != nil
+}
+
+// CordonedOffErr returns the cause error if the queue is cordoned off, nil
+// otherwise.
+func (q *Queue) CordonedOffErr() error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.cordonedOff
 }
 
 func (q *Queue) serve(sid int) {

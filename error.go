@@ -69,3 +69,7 @@ func NewCanceledError(err error) error {
 
 // ErrInvalidConfig is an error thrown when a config parameter is invalid.
 var ErrInvalidConfig = errors.New("invalid config")
+
+// ErrCordonedOff is the default error returned by the newly called Wait or
+// WaitWithTask while the queue is cordoned off.
+var ErrCordonedOff = errors.New("cordoned off")

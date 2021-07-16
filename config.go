@@ -28,4 +28,10 @@ type Config struct {
 	// start. Same as calling Pause() immediately after creation. Call
 	// Resume() to resume.
 	Paused bool
+
+	// CordonedOff temporarily blocks new entry into the queue. If this
+	// CordonedOff is a non-nil error, new calling Wait or WaitWithTask
+	// immediately fails and returns it. Can be unblocked by Uncordon.
+	// See Cordon, CordonWithError, and Uncordon for details.
+	CordonedOff error
 }

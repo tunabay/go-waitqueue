@@ -413,3 +413,87 @@ func TestQueue_Pause(t *testing.T) {
 		t.Errorf("unexpected counter: got %d, want %d", numDone, numEntries)
 	}
 }
+
+func TestQueue_Cordon(t *testing.T) {
+	myErr := errors.New("my error")
+
+	conf := &waitqueue.Config{
+		Interval:    time.Second / 10,
+		CordonedOff: myErr,
+	}
+	q, err := waitqueue.NewWithConfig(conf)
+	if err != nil {
+		t.Fatalf("waitqueue.NewWithConfig(): %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
+	defer cancel()
+
+	var numDone uint32
+	var wg sync.WaitGroup
+
+	for i := 0; i < 3; i++ {
+		err := q.Wait(ctx)
+		if err == nil {
+			t.Errorf("error expected but no error.")
+		}
+		if !errors.Is(err, myErr) {
+			t.Errorf("unexpected error: got: %v, want: %v", err, myErr)
+		}
+		// t.Logf("cordoned off: %s", err)
+	}
+
+	if !q.IsCordonedOff() {
+		t.Errorf("unexpected IsCordonedOff result: got: false, want: true")
+	}
+	q.Uncordon()
+	if q.IsCordonedOff() {
+		t.Errorf("unexpected IsCordonedOff result: got: true, want: false")
+	}
+
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			if err := q.Wait(ctx); err != nil {
+				t.Errorf("n=%d: Wait() failed: %v", n, err)
+			}
+			atomic.AddUint32(&numDone, 1)
+		}(i)
+	}
+
+	time.Sleep(time.Second / 5) // wait for all Wait started
+
+	q.Cordon()
+
+	for i := 0; i < 3; i++ {
+		err := q.Wait(ctx)
+		if err == nil {
+			t.Errorf("error expected but no error.")
+		}
+		if !errors.Is(err, waitqueue.ErrCordonedOff) {
+			t.Errorf("unexpected error: got: %v, want: %v", err, waitqueue.ErrCordonedOff)
+		}
+		// t.Logf("cordoned off: %s", err)
+	}
+
+	q.Uncordon()
+
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			if err := q.Wait(ctx); err != nil {
+				t.Errorf("n=%d: Wait() failed: %v", n, err)
+			}
+			atomic.AddUint32(&numDone, 1)
+		}(i)
+	}
+
+	wg.Wait()
+
+	t.Logf("done: %5d", numDone)
+	if numDone != 20 {
+		t.Errorf("unexpected counter: got %d, want 20", numDone)
+	}
+}
