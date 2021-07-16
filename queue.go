@@ -133,10 +133,19 @@ func (q *Queue) WaitWithTask(ctx context.Context, task TaskFunc) error {
 	return taskErr
 }
 
-// Length returns the current length of the queue. Only entries waiting in the
+// Len returns the current length of the queue. Only entries waiting in the
 // queue are counted. Entries that have already left the queue are not included
 // in the count. It also does not include entries that are executing TaskFunc
 // within an exit gate.
+func (q *Queue) Len() int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.line.n
+}
+
+// Length is identical to Len, deprecated.
+//
+// Deprecated: Use Len instead.
 func (q *Queue) Length() int {
 	q.mu.Lock()
 	defer q.mu.Unlock()
